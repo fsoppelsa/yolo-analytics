@@ -1,0 +1,12 @@
+
+Endpoint: http://minio-fallback.aistor.svc.cluster.local:9000
+
+minioadmin:minioadmin
+
+Test:
+oc run curl-test --image=curlimages/curl --rm -it --restart=Never -- \
+  curl -v http://minio-fallback.aistor.svc.cluster.local:9000/minio/health/live
+
+Fwd MinIO:
+
+oc port-forward svc/minio-fallback 9001:9001 -n aistor

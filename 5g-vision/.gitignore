@@ -1,0 +1,10 @@
+# Model weights — downloaded/generated at runtime
+*.pt
+*.onnx
+
+# Inference output
+output/
+runs/
+
+# Sample video — fetched by download_sample_video.py
+#site_camera_01.mp4
