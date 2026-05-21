@@ -1,0 +1,425 @@
+# PIPELINE DEFINITION
+# Name: 5g-edge-yolo-detection
+# Description: End-to-end video analytics pipeline: ingest from 5G edge stream, run YOLO detection, and store results in MinIO.
+# Inputs:
+#    bucket_name: str [Default: 'yolo-results']
+#    confidence_threshold: float [Default: 0.5]
+#    duration_seconds: int [Default: 30.0]
+#    iou_threshold: float [Default: 0.45]
+#    minio_endpoint: str [Default: 'minio-service:9000']
+#    model_uri: str [Default: 's3://models/yolov8n.onnx']
+#    object_prefix: str [Default: 'detections/run-001']
+#    stream_url: str [Default: 'rtsp://edge-node-1:8554/live']
+#    target_height: int [Default: 640.0]
+#    target_width: int [Default: 640.0]
+components:
+  comp-filter-and-annotate:
+    executorLabel: exec-filter-and-annotate
+    inputDefinitions:
+      artifacts:
+        preprocessed_frames:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        raw_detections:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        iou_threshold:
+          parameterType: NUMBER_DOUBLE
+    outputDefinitions:
+      artifacts:
+        annotated_frames:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        detection_report:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-ingest-video:
+    executorLabel: exec-ingest-video
+    inputDefinitions:
+      parameters:
+        duration_seconds:
+          parameterType: NUMBER_INTEGER
+        stream_url:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        raw_frames:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-preprocess-frames:
+    executorLabel: exec-preprocess-frames
+    inputDefinitions:
+      artifacts:
+        raw_frames:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        target_height:
+          parameterType: NUMBER_INTEGER
+        target_width:
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      artifacts:
+        preprocessed_frames:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-run-yolo-detection:
+    executorLabel: exec-run-yolo-detection
+    inputDefinitions:
+      artifacts:
+        preprocessed_frames:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        confidence_threshold:
+          parameterType: NUMBER_DOUBLE
+        model_uri:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        raw_detections:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-upload-to-minio:
+    executorLabel: exec-upload-to-minio
+    inputDefinitions:
+      artifacts:
+        annotated_frames:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        detection_report:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+      parameters:
+        bucket_name:
+          parameterType: STRING
+        minio_endpoint:
+          parameterType: STRING
+        object_prefix:
+          parameterType: STRING
+deploymentSpec:
+  executors:
+    exec-filter-and-annotate:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - filter_and_annotate
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef filter_and_annotate(\n    raw_detections: Input[Dataset],\n \
+          \   preprocessed_frames: Input[Dataset],\n    iou_threshold: float,\n  \
+          \  annotated_frames: Output[Dataset],\n    detection_report: Output[Dataset],\n\
+          ):\n    \"\"\"Apply NMS, filter by class, and draw bounding boxes on frames.\"\
+          \"\"\n    pass\n\n"
+        image: python:3.11-slim
+    exec-ingest-video:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - ingest_video
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef ingest_video(\n    stream_url: str,\n    duration_seconds: int,\n\
+          \    raw_frames: Output[Dataset],\n):\n    \"\"\"Pull frames from an edge\
+          \ RTSP stream and store them as a dataset.\"\"\"\n    pass\n\n"
+        image: python:3.11-slim
+    exec-preprocess-frames:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - preprocess_frames
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef preprocess_frames(\n    raw_frames: Input[Dataset],\n    target_width:\
+          \ int,\n    target_height: int,\n    preprocessed_frames: Output[Dataset],\n\
+          ):\n    \"\"\"Resize, normalize, and batch frames for inference.\"\"\"\n\
+          \    pass\n\n"
+        image: python:3.11-slim
+    exec-run-yolo-detection:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - run_yolo_detection
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef run_yolo_detection(\n    preprocessed_frames: Input[Dataset],\n\
+          \    model_uri: str,\n    confidence_threshold: float,\n    raw_detections:\
+          \ Output[Dataset],\n    metrics: Output[Metrics],\n):\n    \"\"\"Run YOLO\
+          \ object detection on preprocessed frames.\"\"\"\n    pass\n\n"
+        image: quay.io/rhoai/yolo:latest
+    exec-upload-to-minio:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - upload_to_minio
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.16.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef upload_to_minio(\n    annotated_frames: Input[Dataset],\n   \
+          \ detection_report: Input[Dataset],\n    minio_endpoint: str,\n    bucket_name:\
+          \ str,\n    object_prefix: str,\n):\n    \"\"\"Upload annotated frames and\
+          \ detection report to MinIO object storage.\"\"\"\n    pass\n\n"
+        image: python:3.11-slim
+pipelineInfo:
+  description: 'End-to-end video analytics pipeline: ingest from 5G edge stream, run
+    YOLO detection, and store results in MinIO.'
+  name: 5g-edge-yolo-detection
+root:
+  dag:
+    tasks:
+      filter-and-annotate:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-filter-and-annotate
+        dependentTasks:
+        - preprocess-frames
+        - run-yolo-detection
+        inputs:
+          artifacts:
+            preprocessed_frames:
+              taskOutputArtifact:
+                outputArtifactKey: preprocessed_frames
+                producerTask: preprocess-frames
+            raw_detections:
+              taskOutputArtifact:
+                outputArtifactKey: raw_detections
+                producerTask: run-yolo-detection
+          parameters:
+            iou_threshold:
+              componentInputParameter: iou_threshold
+        taskInfo:
+          name: filter-and-annotate
+      ingest-video:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-ingest-video
+        inputs:
+          parameters:
+            duration_seconds:
+              componentInputParameter: duration_seconds
+            stream_url:
+              componentInputParameter: stream_url
+        taskInfo:
+          name: ingest-video
+      preprocess-frames:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-preprocess-frames
+        dependentTasks:
+        - ingest-video
+        inputs:
+          artifacts:
+            raw_frames:
+              taskOutputArtifact:
+                outputArtifactKey: raw_frames
+                producerTask: ingest-video
+          parameters:
+            target_height:
+              componentInputParameter: target_height
+            target_width:
+              componentInputParameter: target_width
+        taskInfo:
+          name: preprocess-frames
+      run-yolo-detection:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-run-yolo-detection
+        dependentTasks:
+        - preprocess-frames
+        inputs:
+          artifacts:
+            preprocessed_frames:
+              taskOutputArtifact:
+                outputArtifactKey: preprocessed_frames
+                producerTask: preprocess-frames
+          parameters:
+            confidence_threshold:
+              componentInputParameter: confidence_threshold
+            model_uri:
+              componentInputParameter: model_uri
+        taskInfo:
+          name: run-yolo-detection
+      upload-to-minio:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-upload-to-minio
+        dependentTasks:
+        - filter-and-annotate
+        inputs:
+          artifacts:
+            annotated_frames:
+              taskOutputArtifact:
+                outputArtifactKey: annotated_frames
+                producerTask: filter-and-annotate
+            detection_report:
+              taskOutputArtifact:
+                outputArtifactKey: detection_report
+                producerTask: filter-and-annotate
+          parameters:
+            bucket_name:
+              componentInputParameter: bucket_name
+            minio_endpoint:
+              componentInputParameter: minio_endpoint
+            object_prefix:
+              componentInputParameter: object_prefix
+        taskInfo:
+          name: upload-to-minio
+  inputDefinitions:
+    parameters:
+      bucket_name:
+        defaultValue: yolo-results
+        isOptional: true
+        parameterType: STRING
+      confidence_threshold:
+        defaultValue: 0.5
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      duration_seconds:
+        defaultValue: 30.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      iou_threshold:
+        defaultValue: 0.45
+        isOptional: true
+        parameterType: NUMBER_DOUBLE
+      minio_endpoint:
+        defaultValue: minio-service:9000
+        isOptional: true
+        parameterType: STRING
+      model_uri:
+        defaultValue: s3://models/yolov8n.onnx
+        isOptional: true
+        parameterType: STRING
+      object_prefix:
+        defaultValue: detections/run-001
+        isOptional: true
+        parameterType: STRING
+      stream_url:
+        defaultValue: rtsp://edge-node-1:8554/live
+        isOptional: true
+        parameterType: STRING
+      target_height:
+        defaultValue: 640.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+      target_width:
+        defaultValue: 640.0
+        isOptional: true
+        parameterType: NUMBER_INTEGER
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.16.1

@@ -1,0 +1,21 @@
+apiVersion: datasciencepipelinesapplications.opendatahub.io/v1
+kind: DataSciencePipelinesApplication
+metadata:
+  name: dspa
+  namespace: ericsson-projects
+spec:
+  apiServer:
+    enableSamplePipeline: false
+  database:
+    mariaDB:
+      deploy: true
+  objectStorage:
+    externalStorage:
+      bucket: pipelines
+      host: minio-fallback.aistor.svc.cluster.local
+      port: "9000"
+      scheme: http
+      s3CredentialsSecret:
+        secretName: yolo-minio-s3
+        accessKey: AWS_ACCESS_KEY_ID
+        secretKey: AWS_SECRET_ACCESS_KEY
